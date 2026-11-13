@@ -1347,7 +1347,7 @@ public sealed class ProjectSession : IAsyncDisposable
                 try
                 {
                     if (walk == reads && !IsEnded && walked.GetAwaiter().GetResult() is { } found
-                        && (!Workspace!.LoadsAs(found) || !Workspace.GodotGames.SequenceEqual(found.GodotGames, PathNames.Comparer)))
+                        && (!Workspace!.LoadsAs(found) || !Workspace.GodotGames.SequenceEqual(found.GodotGames, PathNames.Comparer) || Workspace.CppChanged(found)))
                     {
                         Reload(found);
                     }

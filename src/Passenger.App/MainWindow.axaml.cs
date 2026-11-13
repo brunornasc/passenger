@@ -95,6 +95,7 @@ public partial class MainWindow : IdeWindow
         AddGodotProject();
         AddGodotExport();
         AddDotnet();
+        AddCpp();
         AddRoutes();
         AddRequestMarks();
         AddRequests();
@@ -566,7 +567,16 @@ public partial class MainWindow : IdeWindow
 
     /// <summary>Builds the solution (or, with none, the folder's projects), as Build does; <paramref name="then"/> hears how
     /// it ended.</summary>
-    public void BuildSolution(Action<BuildOutcome>? then = null) => buildRun.Build(BuildKind.Build, null, then);
+    public void BuildSolution(Action<BuildOutcome>? then = null)
+    {
+        // A C/C++ folder has no MSBuild solution: Build Solution builds its CMake targets instead.
+        if (CppOnly())
+        {
+            IdeErrors.Observe(CppCommandAsync(CppStep.Build));
+            return;
+        }
+        buildRun.Build(BuildKind.Build, null, then);
+    }
 
     /// <summary>Builds, rebuilds or cleans the solution, or the projects given, as the open folder's
     /// <see cref="BuildRunController.Build"/> does.</summary>

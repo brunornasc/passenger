@@ -42,6 +42,9 @@ under MIT, for work and personal projects alike, with no account, no licence key
 - **Local History and a three-way merge:** every version of your files Passenger has seen, and Git's conflicts merged.
 - **Godot 4 games, in C# and GDScript:** the game run, debugged, profiled and Hot Reloaded, its C# checked against its
   scenes, its GDScript and shaders read as Godot reads them, and the running game's tree and values beside the code.
+- **C and C++ projects:** CMake and Conan configured and built with the C/C++ standards and compilers you choose,
+  external cross toolchains (m68k among them), clangd's completion and diagnostics from `compile_commands.json`,
+  and Run/Debug of CMake targets through GDB's own debug adapter.
 
 Coming from Visual Studio? Its keys are the default, and VS Code's and IntelliJ IDEA's are a setting away, each as
 Rider's keymaps have it. On a Mac, where Visual Studio for Mac was retired in August 2024, Passenger is a full .NET IDE
@@ -230,6 +233,25 @@ in each look's colours.
   <img src="site/images/themes-dark.webp" alt="Passenger's window changing look every two seconds through all twelve, each named in its title bar and Solution view: Passenger, Harbour, Sorbet, Nocturne, Saffron, Bonbon, Ledger, Slate, Orbit, Nightjar, Moss and Phosphor">
 </picture>
 
+### C and C++
+
+A folder with a `CMakeLists.txt` or a `conanfile.txt` opens as a C/C++ project beside the .NET ones. **File | New
+Solution** writes one, and **Tools | C/C++ Toolchain…** is a wizard that finds CMake, Conan, clangd, Ninja and the
+compilers, installs what is missing (for everyone or for you alone, with no administrator), and lets you choose the
+C and C++ standards, the compilers and an external cross toolchain — `m68k-elf-gcc`, `m68k-amigaos-g++` and
+`m68k-atari-mint-g++` presets among them. It shows the exact commands before it saves anything.
+
+**CMake: Configure** writes `compile_commands.json`, which clangd reads for completion, diagnostics and navigation;
+**CMake: Build** and **C/C++: Run Target…** build and run it. **Install C/C++ dependencies with Conan…** lists the
+packages of [conan.io/center](https://conan.io/center), then writes `conanfile.txt`, runs `conan install` and adds the
+`find_package`/`target_link_libraries` lines to `CMakeLists.txt`. A C/C++ project is its folder alone: creating one
+writes no .NET solution and runs no NuGet. Each `add_executable` target is also a run
+configuration in the toolbar: **Run** builds and starts it, and **Debug** starts it under GDB's own debug adapter
+(`gdb -i=dap`, GDB 14+), with breakpoints, stepping, frames and variables in the Debug window. C, C++ and assembly
+files are coloured by TextMate grammars. Changing a standard, compiler or target in Settings | C/C++ starts
+clangd again at once. Hot Reload and the profiler stay .NET-only.
+[The C/C++ guide](docs/cpp.md) has the settings, the commands and cross-compiling with m68k.
+
 ### And the rest
 
 - **Git:** the Commit window, the log with its branch graph, side-by-side diffs with the changed words marked, blame,
@@ -280,7 +302,10 @@ needs:
   Settings › Godot; Passenger is tested on Godot 4.7 and 4.8's betas;
 - for Blazor's WebAssembly debugging, **Chrome, Edge or another Chromium browser**;
 - for containers, **a container engine running Linux containers** (Docker Desktop, Colima, OrbStack, Rancher Desktop,
-  Podman or a remote engine).
+  Podman or a remote engine);
+- for C/C++ projects, **CMake, Conan, clangd, Ninja, GDB 14+ and a C/C++ compiler** — the C/C++ Toolchain
+  wizard installs what is missing, and [`tools/cpp-tools.sh`](tools/cpp-tools.sh) does it from a shell
+  ([the guide](docs/cpp.md)).
 
 
 ## Your coding agent, using the IDE as you do
@@ -348,7 +373,9 @@ files under the agent's IDE.
 ## Building
 
 Building needs the .NET 11 SDK (11.0.100 or a later 11.0 SDK, as [`global.json`](global.json) asks) and
-[just](https://github.com/casey/just). The tests need more:
+[just](https://github.com/casey/just). On a machine with neither installed,
+[`tools/setup-dev.sh`](tools/setup-dev.sh) installs both SDKs and `just` for your user alone (no administrator);
+`. tools/dev-env.sh` puts them on a shell's PATH, and `--cpp` installs the C/C++ tools as well. The tests need more:
 
 - **the .NET 10 SDK** beside it, since the programs the debugger's tests debug ([`tests/Debuggees`](tests/Debuggees))
   and most projects the tests write run on .NET 10;

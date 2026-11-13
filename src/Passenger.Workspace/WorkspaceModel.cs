@@ -1,5 +1,6 @@
 using Passenger.Core;
 using Passenger.Host;
+using Passenger.Workspace.Cpp;
 
 namespace Passenger.Workspace;
 
@@ -68,9 +69,15 @@ public sealed record WorkspaceModel(string Folder, SolutionModel? Solution, IRea
     public static WorkspaceModel Read(string folder, string? named = null)
     {
         List<string> games = [];
+        List<CppProject> cpp = [];
         return ReadSolution(folder, named, out UnreadSolution? unread) is { } read
-            ? read.WithPrograms(Walk(folder, [.. read.Projects.Where(p => !p.IsProgram).Select(p => p.Folder)], games)) with { GodotGames = games }
-            : new WorkspaceModel(folder, null, [.. Walk(folder, null, games).Select(ProjectModel.Unevaluated)]) { Unread = unread, GodotGames = games };
+            ? read.WithPrograms(Walk(folder, [.. read.Projects.Where(p => !p.IsProgram).Select(p => p.Folder)], games, cpp)) with { GodotGames = games, CppProjects = cpp }
+            : new WorkspaceModel(folder, null, [.. Walk(folder, null, games, cpp).Select(ProjectModel.Unevaluated)])
+            {
+                Unread = unread,
+                GodotGames = games,
+                CppProjects = cpp,
+            };
     }
 
     /// <summary>The folders of the Godot projects its walk found with no C# project of their own: a project.godot in a
@@ -78,6 +85,18 @@ public sealed record WorkspaceModel(string Folder, SolutionModel? Solution, IRea
     /// own). Each runs its game on Godot as it is, its GDScript needing no build; one a project elsewhere builds C# for
     /// (its GodotProjectDir) is that project's (<see cref="ScriptGames"/>).</summary>
     public IReadOnlyList<string> GodotGames { get; init; } = [];
+
+    /// <summary>The C/C++ projects found under the folder: each a CMakeLists.txt or a Conan recipe, with its targets and
+    /// standards read as it opens. Kept here so the C/C++ commands, clangd and New Project read one list.</summary>
+    public IReadOnlyList<CppProject> CppProjects { get; init; } = [];
+
+    /// <summary>Whether a walk's read found other C/C++ projects or targets than this one has.</summary>
+    public bool CppChanged(WorkspaceModel other) => !CppProjects.Select(p => p.Signature)
+        .SequenceEqual(other.CppProjects.Select(p => p.Signature), StringComparer.Ordinal);
+
+    /// <summary>The C/C++ project a file is in: the innermost folder above it holding a project of its own.</summary>
+    public CppProject? CppOf(string path) => CppProjects
+        .Where(p => PathNames.IsUnder(path, p.Folder)).OrderByDescending(p => p.Folder.Length).FirstOrDefault();
 
     /// <summary>The Godot projects of GDScript alone among those found (<see cref="GodotGames"/>): those no project of these
     /// builds C# for or runs as a host (<see cref="ProjectModel.NamedGodotFolder"/>).</summary>
@@ -130,16 +149,28 @@ public sealed record WorkspaceModel(string Folder, SolutionModel? Solution, IRea
     /// <summary>A folder without a solution read again through the projects found before: those still there, as quick as
     /// a solution's read. Only the walk finds those added since.</summary>
     public WorkspaceModel Reread() =>
-        new(Folder, null, [.. Projects.Where(p => File.Exists(p.Path)).Select(p => ProjectModel.Unevaluated(p.Path))]) { GodotGames = GamesStill(this) };
+        new(Folder, null, [.. Projects.Where(p => File.Exists(p.Path)).Select(p => ProjectModel.Unevaluated(p.Path))])
+        {
+            GodotGames = GamesStill(this),
+            CppProjects = CppStill(this),
+        };
 
     /// <summary>The Godot projects of GDScript alone a read before found, those still there, until the walk for them lands.</summary>
     private static IReadOnlyList<string> GamesStill(WorkspaceModel before) =>
         [.. before.GodotGames.Where(g => File.Exists(Path.Combine(g, GodotProject.FileName)))];
 
+    /// <summary>The C/C++ projects a read before found, those still there, until the walk for them lands.</summary>
+    private static IReadOnlyList<CppProject> CppStill(WorkspaceModel before) =>
+        [.. before.CppProjects.Where(p => CMakeProject.IsAt(p.Folder))];
+
     /// <summary>A solution's or project's read with the programs found beside it before, those still there, until the walk
     /// for them lands: what the language server loaded stays loaded meanwhile.</summary>
     public WorkspaceModel KeepingPrograms(WorkspaceModel before) =>
-        WithPrograms(before.Programs.Where(p => File.Exists(p.Path)).Select(p => p.Path)) with { GodotGames = GamesStill(before) };
+        WithPrograms(before.Programs.Where(p => File.Exists(p.Path)).Select(p => p.Path)) with
+        {
+            GodotGames = GamesStill(before),
+            CppProjects = CppStill(before),
+        };
 
     /// <summary>The same workspace with these programs in place of those it had, after its solution's or folder's projects.</summary>
     public WorkspaceModel WithPrograms(IEnumerable<string> programs) =>
@@ -183,7 +214,7 @@ public sealed record WorkspaceModel(string Folder, SolutionModel? Solution, IRea
     /// of them). A program is looked for only outside every project's folder. Given the folders of a solution's or project's
     /// own (<paramref name="solved"/>), the walk enters none of them and takes programs alone, a project file it finds
     /// keeping its folder's files its own.</summary>
-    private static List<string> Walk(string folder, IReadOnlyList<string>? solved, List<string> games)
+    private static List<string> Walk(string folder, IReadOnlyList<string>? solved, List<string> games, List<CppProject> cpp)
     {
         List<string> found = [];
         List<string> projectFolders = [.. solved ?? []];
@@ -197,6 +228,10 @@ public sealed record WorkspaceModel(string Folder, SolutionModel? Solution, IRea
         foreach ((string at, IReadOnlyList<string> files) in FolderWalk.Folders(folder, built: true, enters: f => !passed.Contains(f)).Take(FolderLimit))
         {
             List<string> projects = [.. files.Where(IsProject)];
+            if (CMakeProject.IsAt(at) && !cpp.Any(p => PathNames.Same(p.Folder, at)) && CMakeProject.Read(at) is { } project)
+            {
+                cpp.Add(project);
+            }
             if (projects.Count == 0 && files.Any(f => Path.GetFileName(f) == GodotProject.FileName) && !games.Any(g => PathNames.IsUnder(at, g))
                 && !projectFolders.Any(p => PathNames.IsUnder(at, p)))
             {

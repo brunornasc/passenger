@@ -4,6 +4,7 @@ using Passenger.App.Aspire;
 using Passenger.App.State;
 using Passenger.Core;
 using Passenger.Workspace;
+using Passenger.Workspace.Cpp;
 
 namespace Passenger.App.Run;
 
@@ -201,6 +202,12 @@ public sealed record RunConfiguration
     /// than keeping it in the person's own <c>.slnLaunch.user</c>.</summary>
     public bool Shared { get; init; } = true;
 
+    /// <summary>Whether it runs a CMake target: gdb debugs it and its build is cmake --build, not dotnet build.</summary>
+    public bool Cpp { get; init; }
+
+    /// <summary>The CMake executable target it runs, where it names one.</summary>
+    public string CppTarget { get; init; } = string.Empty;
+
     /// <summary>For a multi-project configuration, the profile as its file held it when read, which a change is written over;
     /// null for one not written yet.</summary>
     [JsonIgnore]
@@ -335,6 +342,22 @@ public sealed record RunConfiguration
                 Generated = true,
             });
         }
+        // A CMake executable target is a run configuration of its own; Run starts it, Debug asks gdb for it.
+        foreach (CppProject cpp in workspace?.CppProjects ?? [])
+        {
+            foreach (CppTarget target in cpp.Executables)
+            {
+                generated.Add(new RunConfiguration
+                {
+                    Name = $"{cpp.Name}: {target.Name}",
+                    Project = cpp.Path,
+                    Cpp = true,
+                    CppTarget = target.Name,
+                    BuildBeforeLaunch = true,
+                    Generated = true,
+                });
+            }
+        }
         HashSet<string> names = new(StringComparer.OrdinalIgnoreCase);
         for (int i = 0; i < generated.Count; i++)
         {
@@ -412,6 +435,7 @@ public sealed record RunConfiguration
     {
         Kind = Enum.IsDefined(Kind) ? Kind : RunKind.Project,
         Project = Project ?? string.Empty,
+        CppTarget = CppTarget ?? string.Empty,
         LinkedAppHosts = [.. (LinkedAppHosts ?? []).Where(p => !string.IsNullOrWhiteSpace(p)).Distinct(Core.PathNames.Comparer)],
         Framework = Framework ?? string.Empty,
         LaunchProfile = LaunchProfile ?? string.Empty,

@@ -46,7 +46,7 @@ public partial class MainWindow
     /// <summary>New Solution: the dialog over this window, and the solution opened, built, once it is made.</summary>
     public NewProjectDialog ShowNewSolution()
     {
-        NewProjectDialog dialog = new(BesideLast(), null, ContainersWhyNot(), settings.GodotExecutable);
+        NewProjectDialog dialog = new(BesideLast(), null, ContainersWhyNot(), settings.GodotExecutable, settings);
         dialog.Closed += (_, _) =>
         {
             if (dialog.Created is { Solution: { } solution } made)
@@ -57,6 +57,11 @@ public partial class MainWindow
             {
                 // A Godot game of GDScript is its folder, which opens as the workspace.
                 Open(game.Folder, opened => opened.OfferGodotEditor(null));
+            }
+            else if (dialog.Created is { Cpp: true } cpp)
+            {
+                // A C/C++ project is its folder: CMakeLists.txt is its project, no .NET solution to open.
+                Open(cpp.Folder);
             }
         };
         IdeErrors.Observe(dialog.ShowDialog(this));
@@ -74,7 +79,7 @@ public partial class MainWindow
         }
         ProjectTarget target = new(solution.Path, into, [.. solution.Projects.Select(p => Path.GetFileNameWithoutExtension(p.Path))],
             Projects.FirstOrDefault(p => p.Exists && p.IsAspireHost)?.Name);
-        NewProjectDialog dialog = new(ProjectFolderFor(solution, into), target, ContainersWhyNot(), settings.GodotExecutable);
+        NewProjectDialog dialog = new(ProjectFolderFor(solution, into), target, ContainersWhyNot(), settings.GodotExecutable, settings);
         dialog.Closed += (_, _) =>
         {
             if (dialog.Created is { } made && Solution?.Path == solution.Path)

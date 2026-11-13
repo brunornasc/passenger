@@ -130,6 +130,14 @@ public static class AppActions
     public const string InstallDotnetSdk = "app.dotnet.install";
     public const string AddDotnetToPath = "app.dotnet.addToPath";
 
+    // The C/C++ toolchain's wizard, and its CMake, Conan and run commands: no key of Rider's.
+    public const string CppToolchainWizard = "app.cpp.toolchainWizard";
+    public const string CppConfigure = "app.cpp.configure";
+    public const string CppConanInstall = "app.cpp.conanInstall";
+    public const string CppConanPackages = "app.cpp.conanPackages";
+    public const string CppBuild = "app.cpp.build";
+    public const string CppRun = "app.cpp.run";
+
     // The Endpoints window over the folder's .http files, and Test of the request chosen there: no key of Rider's.
     public const string ShowEndpoints = "app.showEndpoints";
     public const string TestEndpoint = "app.endpoints.test";

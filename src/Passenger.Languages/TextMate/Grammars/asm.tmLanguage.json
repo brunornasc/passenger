@@ -1,0 +1,101 @@
+{
+  "name": "Assembly",
+  "scopeName": "source.asm",
+  "patterns": [
+    {
+      "include": "#comments"
+    },
+    {
+      "include": "#strings"
+    },
+    {
+      "include": "#numbers"
+    },
+    {
+      "include": "#directives"
+    },
+    {
+      "include": "#labels"
+    },
+    {
+      "include": "#registers"
+    },
+    {
+      "include": "#instructions"
+    }
+  ],
+  "repository": {
+    "comments": {
+      "patterns": [
+        {
+          "name": "comment.block.asm",
+          "begin": "/\\*",
+          "end": "\\*/"
+        },
+        {
+          "name": "comment.line.double-slash.asm",
+          "match": "//.*$"
+        },
+        {
+          "name": "comment.line.semicolon.asm",
+          "match": ";.*$"
+        },
+        {
+          "name": "comment.line.number-sign.asm",
+          "match": "#.*$"
+        }
+      ]
+    },
+    "strings": {
+      "patterns": [
+        {
+          "name": "string.quoted.double.asm",
+          "begin": "\"",
+          "end": "\"",
+          "patterns": [
+            {
+              "name": "constant.character.escape.asm",
+              "match": "\\\\."
+            }
+          ]
+        },
+        {
+          "name": "string.quoted.single.asm",
+          "match": "'(?:\\\\.|[^'])'"
+        }
+      ]
+    },
+    "numbers": {
+      "patterns": [
+        {
+          "name": "constant.numeric.hex.asm",
+          "match": "\\b0[xX][0-9a-fA-F]+\\b"
+        },
+        {
+          "name": "constant.numeric.binary.asm",
+          "match": "\\b0[bB][01]+\\b"
+        },
+        {
+          "name": "constant.numeric.decimal.asm",
+          "match": "\\b[0-9]+\\b"
+        }
+      ]
+    },
+    "directives": {
+      "name": "keyword.control.directive.asm",
+      "match": "(?i)^\\s*\\.(?:section|text|data|bss|globl|global|extern|align|p2align|balign|byte|word|long|quad|ascii|asciz|string|include|macro|endm|equ|set|org|type|size|file|loc|def|if|else|endif|rept|endr|comm|lcomm|weak|hidden|protected|local|zero|space|skip|fill|cpu|arch|fpu|syntax|code16|code32|code64|attribute|thumb|arm|end|func|endfunc|cfi|abicalls|option|intel_syntax|att_syntax)\\b"
+    },
+    "labels": {
+      "name": "entity.name.label.asm",
+      "match": "^\\s*[A-Za-z_.$][\\w.$]*:"
+    },
+    "registers": {
+      "name": "variable.other.register.asm",
+      "match": "(?i)(?:%|\\$)?%?\\b(?:r(?:[0-9]|1[0-5])[dwb]?|[re]?(?:ax|bx|cx|dx|si|di|bp|sp|ip)|[xy]mm(?:[0-9]|[12][0-9]|3[01])|st\\([0-7]\\)|d[0-7]|a[0-7]|pc|sr|ccr|usp|ssp|fp|sp|lr|x[0-9]|w[0-9]|v[0-9]|q[0-9]|r[0-9]|v[0-9])\\b"
+    },
+    "instructions": {
+      "name": "keyword.opcode.asm",
+      "match": "(?i)\\b(?:mov|movq|movl|movw|movb|movabs|movsx|movzx|movs|movsb|movsw|movsd|movsq|lea|leaq|push|pushq|pushl|pop|popq|popl|pusha|popa|pushf|popf|add|addq|addl|addb|addw|adc|sub|subq|subl|sbb|inc|dec|neg|mul|imul|idiv|div|and|or|xor|not|shl|shr|sal|sar|rol|ror|rcl|rcr|test|cmp|cmpq|cmpl|jmp|jmpq|call|callq|ret|retq|retf|retn|leave|enter|nop|nopw|nopl|hlt|int|int3|into|iret|syscall|sysenter|ja|jae|jb|jbe|jc|je|jg|jge|jl|jle|jna|jnae|jnb|jnbe|jnc|jne|jng|jnge|jnl|jnle|jno|jnp|jns|jnz|jo|jp|jpe|jpo|js|jz|jcxz|jecxz|loop|loope|loopne|loopnz|loopz|seta|setae|setb|setbe|sete|setg|setge|setl|setle|setne|setnz|setz|cmova|cmovae|cmovb|cmovbe|cmove|cmovg|cmovge|cmovl|cmovle|cmovne|cmovz|clc|cld|cli|cmc|stc|std|sti|lahf|sahf|cbw|cwd|cdq|cqo|cwde|cdqe|lods|lodsb|stos|stosb|scas|scasb|cmps|cmpsb|ins|insb|outs|outsb|xchg|xlat|xlatb|bswap|bsf|bsr|bt|btc|btr|bts|rep|repe|repne|repnz|repz|mfence|lfence|sfence|cpuid|ud2|wait|xlat|move|movea|moveq|movem|movep|moveb|movew|movel|exg|swap|lea|pea|link|unlk|adda|addi|addq|addx|suba|subi|subq|subx|muls|mulu|divs|divu|clr|negx|tst|tas|ext|abcd|sbcd|nbcd|andi|eori|ori|not|btst|bclr|bset|bchg|asl|asr|lsl|lsr|rol|ror|roxl|roxr|bra|bsr|beq|bne|blt|bgt|ble|bge|bcc|bcs|bpl|bmi|bvc|bvs|dbcc|dbra|jsr|jmp|rts|rte|rtr|trap|chk|reset|stop|illegal|nop|scc|scs|seq|sne|slt|sgt|sle|sge|spl|smi|st|sf|li|la|lw|sw|lb|sb|lui|addi|addiu|addu|andi|ori|slt|sltu|sll|srl|sra|mult|mfhi|mflo|beq|bne|jal|jr|break|syscall)\\b"
+    }
+  }
+}

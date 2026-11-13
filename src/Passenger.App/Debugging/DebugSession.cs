@@ -23,6 +23,9 @@ public enum DebugEngine
     Managed,
     GDScript,
     WebAssembly,
+
+    /// <summary>A C/C++ program under GDB's own DAP interpreter (gdb -i=dap).</summary>
+    Gdb,
 }
 
 /// <summary>One program under the debugger: the adapter's process (debugger/ beside the app), the
@@ -293,8 +296,16 @@ public sealed class DebugSession
     {
         DebugEngine.GDScript => Godot.GodotScriptAdapter.Takes(path),
         DebugEngine.WebAssembly => InBrowser is { } inBrowser && WebAssemblyAdapter.Takes(inBrowser.Projects, path),
-        _ => !Godot.GodotScriptAdapter.Takes(path),
+        DebugEngine.Gdb => CppTakes(path),
+        _ => !Godot.GodotScriptAdapter.Takes(path) && !CppTakes(path),
     };
+
+    /// <summary>A C, C++ or assembly file: a GDB session's breakpoints, never the .NET adapter's.</summary>
+    private static bool CppTakes(string path)
+    {
+        Passenger.Languages.Language language = Passenger.Languages.Language.ForPath(path);
+        return language.Service == Passenger.Languages.LanguageService.Cpp || language == Passenger.Languages.Language.Assembly;
+    }
 
     public DebugState State { get; private set; } = DebugState.Starting;
 
@@ -443,6 +454,32 @@ public sealed class DebugSession
             Unseen = plan.OnOwnDesktop ? true : null,
         }, breakpoints, lines, log, output, runInTerminal, columns, starting, elsewhere: false, place: null, engine: engine);
 
+    /// <summary>Launches a C/C++ program under GDB's own DAP interpreter (GDB 14 or later), with the store's breakpoints in
+    /// C, C++ and assembly files. GDB starts the program at launch; its output comes as output events.</summary>
+    public static Task<DebugSession> LaunchGdbAsync(Run.LaunchPlan plan, BreakpointStore breakpoints, BuiltLines lines, Action<string> log, Action<OutputEvent> output,
+        Func<string, int, string?, int?, int?>? columns = null, Action<DebugSession>? starting = null, string? gdb = null) =>
+        StartAsync(GdbAdapter(gdb), plan.Program, DapCommands.Launch, new GdbLaunchArguments
+        {
+            Program = plan.Program,
+            Args = plan.Arguments,
+            Cwd = plan.WorkingDirectory,
+            Env = plan.Environment,
+            StopAtBeginningOfMain = false,
+        }, breakpoints, lines, log, output, null, columns, starting, elsewhere: false, place: null, engine: DebugEngine.Gdb);
+
+    /// <summary>GDB itself, as an external adapter, forked off the window's thread.</summary>
+    private static Func<Task<AdapterEnd>> GdbAdapter(string? gdb) =>
+        async () => new ProcessEnd(await ChildProcesses.StartAsync(GdbStart(gdb)));
+
+    private static ProcessStartInfo GdbStart(string? gdb)
+    {
+        ProcessStartInfo start = ChildProcesses.Command(string.IsNullOrWhiteSpace(gdb) ? "gdb" : gdb!.Trim(), ["-q", "-i=dap"]);
+        start.RedirectStandardInput = true;
+        start.RedirectStandardOutput = true;
+        start.RedirectStandardError = true;
+        return start;
+    }
+
     /// <summary>Passenger's own adapter, started beside the app or where the program is (<see cref="AdapterStart"/>), forked
     /// off the window's thread.</summary>
     private static Func<Task<AdapterEnd>> OwnAdapter(AdapterPlace? place, bool elsewhere) =>
@@ -478,7 +515,7 @@ public sealed class DebugSession
             {
                 ClientId = "passenger",
                 ClientName = "Passenger",
-                AdapterId = engine switch { DebugEngine.GDScript => "gdscript", DebugEngine.WebAssembly => "webassembly", _ => "coreclr" },
+                AdapterId = engine switch { DebugEngine.GDScript => "gdscript", DebugEngine.WebAssembly => "webassembly", DebugEngine.Gdb => "gdb", _ => "coreclr" },
                 LinesStartAt1 = true,
                 ColumnsStartAt1 = true,
                 PathFormat = "path",
@@ -488,21 +525,33 @@ public sealed class DebugSession
             session.DataBreakpointsUnavailable = capabilities.SupportsDataBreakpoints == true ? null
                 : capabilities.DataBreakpointsUnavailable ?? "The debugger sets no data breakpoints";
             session.MovesNextStatement = capabilities.SupportsGotoTargetsRequest == true;
-            await session.connection.RequestAsync(request, arguments);
-            await Task.WhenAny(session.initialized.Task, session.ending.Task).WaitAsync(TimeSpan.FromSeconds(30));
-            session.GoingOn();
-            if (quiet)
+            if (engine == DebugEngine.Gdb)
             {
-                // Exception breakpoints given, none of them: an unhandled exception ends the program as it would run.
-                await session.connection.RequestAsync<SetExceptionBreakpointsResponse>(DapCommands.SetExceptionBreakpoints, new SetExceptionBreakpointsArguments([], [], []));
+                // GDB starts at launch, so breakpoints go while pending, before configurationDone (which says notStopped).
+                await Task.WhenAny(session.initialized.Task, session.ending.Task).WaitAsync(TimeSpan.FromSeconds(30));
+                session.GoingOn();
+                await session.SendChangedAsync();
+                await session.connection.RequestAsync(request, arguments);
+                session.GoingOn();
             }
             else
             {
-                await session.SendChangedAsync();
+                await session.connection.RequestAsync(request, arguments);
+                await Task.WhenAny(session.initialized.Task, session.ending.Task).WaitAsync(TimeSpan.FromSeconds(30));
+                session.GoingOn();
+                if (quiet)
+                {
+                    // Exception breakpoints given, none of them: an unhandled exception ends the program as it would run.
+                    await session.connection.RequestAsync<SetExceptionBreakpointsResponse>(DapCommands.SetExceptionBreakpoints, new SetExceptionBreakpointsArguments([], [], []));
+                }
+                else
+                {
+                    await session.SendChangedAsync();
+                }
+                // Never asked of an adapter already told to go: it would start the program as it went.
+                session.GoingOn();
+                await session.connection.RequestAsync(DapCommands.ConfigurationDone, new DapEmpty());
             }
-            // Never asked of an adapter already told to go: it would start the program as it went.
-            session.GoingOn();
-            await session.connection.RequestAsync(DapCommands.ConfigurationDone, new DapEmpty());
             // A stop told before this answer stands, as one before a resume's does.
             if (session.State == DebugState.Starting)
             {
@@ -1101,7 +1150,8 @@ public sealed class DebugSession
                 await SendBreakpointsAsync(path);
             }
         }
-        if (Open() && exceptionsSent != ExceptionSignature())
+        // GDB has no .NET exception filters to set; its own catchpoints are not configured from the client.
+        if (Open() && Engine != DebugEngine.Gdb && exceptionsSent != ExceptionSignature())
         {
             await SendExceptionBreakpointsAsync();
         }

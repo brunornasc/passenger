@@ -1,4 +1,7 @@
+using Passenger.App.Cpp;
+using Passenger.Core;
 using Passenger.Vcs;
+using Passenger.Workspace.Cpp;
 using Passenger.Workspace.GDScript;
 using Passenger.Xaml.Features;
 using D = Passenger.App.Settings.SettingsDialog;
@@ -393,6 +396,66 @@ public static class Declared
         Vcs.DiffView.HighlightingWays,
         new(D.VersionControlPage, "Highlighting differences", "diff highlight highlighting differences words characters lines inline changed git vcs",
             "What a diff marks inside the lines that changed. A diff's own Settings changes it too."));
+
+    public static readonly ChoiceSetting<CppPreset> CppPreset = new(s => s.CppPreset, (s, v) => s with { CppPreset = v }, CppToolchain.Presets,
+        new(D.CppPage, "Toolchain preset", "c c++ cpp gcc clang m68k amiga atari mint cross compiler toolchain preset external",
+            "Where the C and C++ compilers come from. A cross preset names its m68k compilers and target; Custom takes the "
+            + "compiler paths below. The wizard installs what a preset needs and writes these paths for you."));
+
+    public static readonly ChoiceSetting<CStandard> CppC = new(s => s.CppC, (s, v) => s with { CppC = v }, CppStandards.CChoices,
+        new(D.CppPage, "C standard", "c standard c89 c90 c99 c11 c17 c23 cmake c_standard gcc clang",
+            "The C standard a CMake configure passes as CMAKE_C_STANDARD, and clangd's fallback flag. From CMakeLists.txt "
+            + "leaves the project's own setting to say it."));
+
+    public static readonly ChoiceSetting<CxxStandard> CppCxx = new(s => s.CppCxx, (s, v) => s with { CppCxx = v }, CppStandards.CxxChoices,
+        new(D.CppPage, "C++ standard", "c++ cpp standard c++11 c++14 c++17 c++20 c++23 c++26 cmake cxx_standard",
+            "The C++ standard a CMake configure passes as CMAKE_CXX_STANDARD, and clangd's fallback flag. From "
+            + "CMakeLists.txt leaves the project's own setting to say it."));
+
+    public static readonly ChoiceSetting<CppGenerator> CppGenerator = new(s => s.CppGenerator, (s, v) => s with { CppGenerator = v }, CppToolchain.Generators,
+        new(D.CppPage, "CMake generator", "cmake generator ninja make makefiles nmake visual studio build",
+            "The generator a CMake configure uses. Ninja builds quickly and writes compile_commands.json as clangd reads it."));
+
+    public static readonly ToggleSetting CppUseConan = new(s => s.CppUseConan, (s, v) => s with { CppUseConan = v },
+        new(D.CppPage, "Run Conan before configuring", "conan package manager install dependencies cmake toolchain conanfile",
+            "A project with a conanfile.txt or conanfile.py has conan install run before CMake configures it, and Conan's "
+            + "CMakeToolchain.cmake passed as the configure's toolchain file."));
+
+    public static readonly ProgramSetting CppClangd = new(s => s.CppClangd, (s, v) => s with { CppClangd = v },
+        () => CppToolDetection.Find("clangd") ?? "Not found",
+        new(D.CppPage, "clangd executable", "clangd clang lsp language server completion diagnostics autocompletion path",
+            "clangd answers C and C++ completion, diagnostics and navigation from the build folder's compile_commands.json. "
+            + "Empty, it is the one on the PATH or in the wizard's user-local install."),
+        line => CppToolDetection.DescribedAsync(line, "clangd"));
+
+    public static readonly ProgramSetting CppCMake = new(s => s.CppCMake, (s, v) => s with { CppCMake = v },
+        () => CppToolDetection.Find("cmake") ?? "Not found",
+        new(D.CppPage, "cmake executable", "cmake configure build path program", "Empty, it is cmake on the PATH."),
+        line => CppToolDetection.DescribedAsync(line, "cmake"));
+
+    public static readonly ProgramSetting CppConan = new(s => s.CppConan, (s, v) => s with { CppConan = v },
+        () => CppToolDetection.Find("conan") ?? "Not found",
+        new(D.CppPage, "conan executable", "conan package manager install path program", "Empty, it is conan on the PATH."),
+        line => CppToolDetection.DescribedAsync(line, "conan"));
+
+    public static readonly ProgramSetting CppGdb = new(s => s.CppGdb, (s, v) => s with { CppGdb = v },
+        () => CppToolDetection.Find("gdb") ?? "Not found",
+        new(D.CppPage, "gdb executable", "gdb debugger dap breakpoints run debug path program",
+            "GDB 14 or later speaks the Debug Adapter Protocol itself (-i=dap). Empty, it is gdb on the PATH."),
+        line => CppToolDetection.DescribedAsync(line, "gdb"));
+
+    public static readonly ProgramSetting CppCCompiler = new(s => s.CppCCompiler, (s, v) => s with { CppCCompiler = v },
+        () => CppToolDetection.Find("cc") ?? "Not found",
+        new(D.CppPage, "C compiler", "c compiler gcc clang m68k cross cc path program",
+            "The C compiler a CMake configure is told, as CMAKE_C_COMPILER. Empty, it is the preset's, else CMake's own."),
+        line => CppToolDetection.DescribedAsync(line, "cc"));
+
+    public static readonly ProgramSetting CppCxxCompiler = new(s => s.CppCxxCompiler, (s, v) => s with { CppCxxCompiler = v },
+        () => CppToolDetection.Find("c++") ?? "Not found",
+        new(D.CppPage, "C++ compiler", "c++ cpp compiler g++ clang++ m68k cross cxx path program",
+            "The C++ compiler a CMake configure is told, as CMAKE_CXX_COMPILER. A cross compiler's path here is what "
+            + "clangd asks for its system headers."),
+        line => CppToolDetection.DescribedAsync(line, "c++"));
 
     /// <summary>An enum's values with the names Settings gives them, in the enum's order.</summary>
     private static (T Value, string Name)[] Named<T>(string[] names) where T : struct, Enum => [.. Enum.GetValues<T>().Zip(names)];

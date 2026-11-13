@@ -22,6 +22,9 @@ public enum LanguageService
     Dockerfile,
     Yaml,
     GDScript,
+
+    /// <summary>clangd, over a CMake project's compile_commands.json: C, C++ and their headers.</summary>
+    Cpp,
 }
 
 /// <summary>A file name a language claims, matched without regard to case: a name, or one <c>*</c> standing for any run
@@ -245,8 +248,24 @@ public sealed class Language
         blockWords: ["async", "case", "class", "def", "elif", "else", "except", "finally", "for", "if", "match", "try", "while", "with"],
         continued: ContinuedLines.Python, blockless: ContinuedLines.PythonBlockless);
 
+    /// <summary>C, coloured by VS Code's C grammar and answered by clangd over the project's compilation database.</summary>
+    public static readonly Language C = new("c", "C", ["*.c", "*.h"], line: "//", block: ("/*", "*/"),
+        grammar: new("source.c", "c.tmLanguage.json"), service: LanguageService.Cpp);
+
+    /// <summary>C++, coloured by VS Code's C++ grammar and answered by clangd over the project's compilation database.</summary>
+    public static readonly Language Cpp = new("cpp", "C++",
+        ["*.cc", "*.cp", "*.cpp", "*.cxx", "*.c++", "*.hpp", "*.hh", "*.hxx", "*.h++", "*.ipp", "*.inl", "*.tpp", "*.ino"],
+        line: "//", block: ("/*", "*/"), grammar: new("source.cpp", "cpp.tmLanguage.json"), service: LanguageService.Cpp);
+
+    /// <summary>Assembly sources, coloured by a grammar of Passenger's own; GDB takes their breakpoints too.</summary>
+    public static readonly Language Assembly = new("asm", "Assembly", ["*.s", "*.asm", "*.nasm"],
+        line: ";", block: ("/*", "*/"), grammar: new("source.asm", "asm.tmLanguage.json"));
+
+    /// <summary>CMake's and Conan's files, coloured as plain text; a CMakeLists.txt opens a C/C++ project's settings.</summary>
+    public static readonly Language CMake = new("cmake", "CMake", ["CMakeLists.txt", "*.cmake", "conanfile.txt"], line: "#");
+
     /// <summary>Languages with no grammar here, commented as C's are or as scripts are.</summary>
-    public static readonly Language Code = new("code", "Code", ["*.rs", "*.go", "*.java", "*.kt", "*.swift", "*.c", "*.h", "*.cpp"],
+    public static readonly Language Code = new("code", "Code", ["*.rs", "*.go", "*.java", "*.kt", "*.swift"],
         line: "//", block: ("/*", "*/"));
 
     public static readonly Language Script = new("script", "Script", ["*.toml", "*.ps1", "*.rb", "justfile"], line: "#");

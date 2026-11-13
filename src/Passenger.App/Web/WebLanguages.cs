@@ -4,6 +4,8 @@ using Passenger.App.Workspace;
 using Passenger.Core;
 using Passenger.Languages;
 using Passenger.Lsp;
+using Passenger.Workspace.Cpp;
+using AppCpp = Passenger.App.Cpp;
 
 namespace Passenger.App.Web;
 
@@ -31,6 +33,9 @@ public enum WebServerKind
 
     /// <summary>Godot's own GDScript server, in its editor, reached over TCP (<see cref="Godot.GodotScripts"/>).</summary>
     GDScript,
+
+    /// <summary>clangd over a CMake project's compile_commands.json: C, C++ and their headers (<see cref="AppCpp.ClangdServer"/>).</summary>
+    Cpp,
 }
 
 /// <summary>A web language server lost, as the status bar says it, with what starts it again when it was left stopped for
@@ -67,6 +72,7 @@ public sealed class WebLanguages : IAsyncDisposable
     private readonly HashSet<string> installing = new(PathNames.Comparer);
     private readonly CancellationTokenSource ending = new();
     private string? configured;
+    private string cppConfigured;
     private Task<NodeRuntime>? finding;
 
     /// <summary>The ESLint settings the ESLint server runs by, which a change of them starts it again for.</summary>
@@ -101,6 +107,7 @@ public sealed class WebLanguages : IAsyncDisposable
         this.settings = settings;
         AppSettings now = settings();
         configured = now.NodeInterpreter;
+        cppConfigured = AppCpp.CppSettings.Toolchain(now).Signature();
         linting = Linting(now);
         asksDockerHub = now.DockerHubTags;
         Schemas = new JsonSchemas(() => settings().DownloadJsonSchemas);
@@ -187,6 +194,7 @@ public sealed class WebLanguages : IAsyncDisposable
             LanguageService.Dockerfile => WebServerKind.Dockerfile,
             LanguageService.Yaml => WebServerKind.Yaml,
             LanguageService.GDScript => WebServerKind.GDScript,
+            LanguageService.Cpp => WebServerKind.Cpp,
             _ => null,
         };
         return kind is { } server ? (server, language.IdOf(path)) : null;
@@ -201,6 +209,7 @@ public sealed class WebLanguages : IAsyncDisposable
         WebServerKind.Dockerfile => "Dockerfile",
         WebServerKind.Yaml => "YAML",
         WebServerKind.GDScript => "GDScript",
+        WebServerKind.Cpp => "C/C++",
         _ => "JSON",
     };
 
@@ -212,7 +221,12 @@ public sealed class WebLanguages : IAsyncDisposable
         {
             return;
         }
-        ServerPlace place = new(language.Kind, language.Kind == WebServerKind.GDScript ? Godot.GodotScripts.ProjectOf(document.Path) : null);
+        ServerPlace place = new(language.Kind, language.Kind switch
+        {
+            WebServerKind.GDScript => Godot.GodotScripts.ProjectOf(document.Path),
+            WebServerKind.Cpp => CMakeProject.Find(document.Path),
+            _ => null,
+        });
         WebDocument features = new(document, language.Kind, language.LanguageId)
         {
             Stylesheets = Stylesheets, GodotProject = place.Project, AskServer = language.Kind == WebServerKind.GDScript ? () => AskGodot(document) : null,
@@ -546,6 +560,30 @@ public sealed class WebLanguages : IAsyncDisposable
         }
     }
 
+    /// <summary>The C/C++ toolchain changed: clangd starts again on its files, with the compilers, standards and build
+    /// folder the settings name now.</summary>
+    public void UseCppToolchain(AppSettings now)
+    {
+        UiThread.Check();
+        if (disposed)
+        {
+            return;
+        }
+        string signature = AppCpp.CppSettings.Toolchain(now).Signature();
+        if (signature == cppConfigured)
+        {
+            return;
+        }
+        cppConfigured = signature;
+        foreach ((ServerPlace place, NodeServer server) in servers.ToList())
+        {
+            if (place.Kind == WebServerKind.Cpp)
+            {
+                Replace(place, server);
+            }
+        }
+    }
+
     /// <summary>Settings' Complete image tags from Docker Hub changed: the Dockerfile server, running or starting, starts
     /// again with its files, told whether to ask Docker Hub, which it learns only as it starts.</summary>
     public void UseDockerHub(bool asks)
@@ -576,9 +614,14 @@ public sealed class WebLanguages : IAsyncDisposable
         made = new NodeServer(Name(kind), place.Project ?? folder, NodeAsync, restarts ?? new ServerRestarts())
         {
             Package = Path.Combine(Modules, Package(kind), "package.json"),
-            Missing = () => Missing(kind),
+            Missing = kind is WebServerKind.GDScript or WebServerKind.Cpp ? null : () => Missing(kind),
             Command = node => Starting(kind, node),
-            Elsewhere = kind == WebServerKind.GDScript ? () => GodotStart(place) : null,
+            Elsewhere = kind switch
+            {
+                WebServerKind.GDScript => () => GodotStart(place),
+                WebServerKind.Cpp => () => CppStart(place),
+                _ => null,
+            },
             Configure = language => ConfigureAsync(kind, language),
             Listen = started => started.Server.TypeScriptVersion += (_, _) => UiThread.Post(() => StateChanged?.Invoke(this, EventArgs.Empty)),
             Started = started => Started(place, started),
@@ -604,6 +647,14 @@ public sealed class WebLanguages : IAsyncDisposable
         (string? setting, IReadOnlyDictionary<string, string> environment) = (settings().GodotExecutable, GodotEnvironment);
         bool headless = godotAsked.Contains(place) || GodotHeadlessAtOpen;
         return cancel => Godot.GodotScripts.StartAsync(place.Project, setting, environment, LogFolder, headless, cancel);
+    }
+
+    /// <summary>clangd for the C/C++ project a file is in: the toolchain Settings names, its build folder and its compilers.</summary>
+    private Func<CancellationToken, Task<LanguageSession>> CppStart(ServerPlace place)
+    {
+        CppToolchain toolchain = AppCpp.CppSettings.Toolchain(settings());
+        string project = place.Project ?? folder;
+        return cancel => AppCpp.ClangdServer.StartAsync(project, toolchain, LogFolder, cancel);
     }
 
     /// <summary>Godot's server of a script's project asked for, for what Passenger's own reading of it has no answer for:
@@ -647,7 +698,7 @@ public sealed class WebLanguages : IAsyncDisposable
     /// <summary>Why a server cannot start that this build is to blame for: its package, or the Dockerfile server's preload,
     /// is not beside the app.</summary>
     private static string? Missing(WebServerKind kind) =>
-        kind == WebServerKind.GDScript ? null
+        kind is WebServerKind.GDScript or WebServerKind.Cpp ? null
         : !File.Exists(Script(kind)) ? $"its language server is missing from the app's folder ({Script(kind)})"
         : kind == WebServerKind.Dockerfile && !File.Exists(DockerHubTags.Preload) ? $"Passenger's part of its language server is missing from the app's folder ({DockerHubTags.Preload})"
         : null;
@@ -791,8 +842,8 @@ public sealed class WebLanguages : IAsyncDisposable
             hold.Holding.SetResult(server.ProcessId);
             await hold.Until;
         }
-        // Godot's server reads no settings of the client's.
-        if (kind != WebServerKind.GDScript)
+        // Godot's and clangd's servers read no settings of the client's over didChangeConfiguration.
+        if (kind is not (WebServerKind.GDScript or WebServerKind.Cpp))
         {
             await Configure(kind, server);
         }

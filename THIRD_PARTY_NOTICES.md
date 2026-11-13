@@ -878,6 +878,15 @@ Microsoft Corporation), unchanged, from the project its header names:
 - `MagicPython.tmLanguage.json` (VS Code 1.144.0, `extensions/python`): converted from MagicStack/MagicPython
   (https://github.com/MagicStack/MagicPython) at commit 7d0f2b22, its 1.1.1, MIT, Copyright (c) 2015-present MagicStack
   Inc.
+- `c.tmLanguage.json` and `cpp.tmLanguage.json` (VS Code 1.96.0, `extensions/cpp`): converted, unchanged, from
+  jeff-hykin/better-c-syntax (https://github.com/jeff-hykin/better-c-syntax) at commit
+  34712a6106a4ffb0a04d2fa836fd28ff6c5849a4 and jeff-hykin/better-cpp-syntax
+  (https://github.com/jeff-hykin/better-cpp-syntax) at commit f1d127a8af2b184db570345f0bb179503c47fdf6, MIT, Copyright
+  (c) 2019 Jeff Hykin, as each file's header says; they colour .c/.h and .cpp/.hpp files and a Markdown file's C and
+  C++ code blocks.
+
+`asm.tmLanguage.json` is a grammar of Passenger's own for .s, .asm and .nasm files, under this project's MIT licence
+and carrying no third-party code.
 
 And two that colour Razor's .razor and .cshtml files before the language server answers, files of Razor's tooling in
 dotnet/roslyn (https://github.com/dotnet/roslyn, where Razor's tooling moved from dotnet/razor; MIT, Copyright (c) .NET

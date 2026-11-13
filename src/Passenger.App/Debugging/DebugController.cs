@@ -807,6 +807,15 @@ public sealed class DebugController : IDisposable
             ColumnOf, starting), plan.Name, launched: true, inTerminal: inTerminal is not null, group: copies, plan: plan, copy: copies is not null);
     }
 
+    /// <summary>Debugs a C/C++ plan's program with GDB's own DAP interpreter, in a tab of its own with the Debug window's
+    /// console, frames, variables and stepping. Breakpoints in C, C++ and assembly files are sent to it.</summary>
+    public Task<string?> DebugCppAsync(Run.LaunchPlan plan, string? gdb)
+    {
+        UiThread.Check();
+        return OpenAsync((built, log, output, starting) => DebugSession.LaunchGdbAsync(plan, Breakpoints, built, log, output, ColumnOf, starting, gdb),
+            plan.Name, launched: true, plan: plan);
+    }
+
     /// <summary>The live tabs of a configuration's game, one copy or several (<see cref="Run.GameCopies"/>), or of a multi-project
     /// configuration's projects, each by its place from one.</summary>
     public IReadOnlyList<(DebugTab Tab, int Copy)> CopiesOf(string configuration) =>

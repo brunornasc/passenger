@@ -1,10 +1,13 @@
 using System.Text.Json;
 using System.Text.RegularExpressions;
+using Passenger.App.Cpp;
+using Passenger.App.Settings;
 using Passenger.App.State;
 using Passenger.App.Workspace;
 using Passenger.Core;
 using Passenger.Host;
 using Passenger.Workspace;
+using Passenger.Workspace.Cpp;
 
 namespace Passenger.App.Run;
 
@@ -183,6 +186,12 @@ public sealed partial record LaunchPlan
     /// <summary>Whether its Godot game is to draw in the window's Game window (<see cref="RunConfiguration.GodotInPane"/>).</summary>
     public bool GodotInPane { get; init; }
 
+    /// <summary>Whether the plan runs a CMake target: gdb debugs it, and its build is cmake --build, not dotnet build.</summary>
+    public bool Cpp { get; init; }
+
+    /// <summary>The gdb executable a C/C++ plan is debugged with, or null for gdb on the PATH.</summary>
+    public string? Gdb { get; init; }
+
     /// <summary>The size its Godot game's window opens at, by its project (<see cref="Passenger.Workspace.GodotProject.WindowSize"/>).</summary>
     public (int Width, int Height) GodotSize { get; init; }
 
@@ -228,12 +237,17 @@ public sealed partial record LaunchPlan
     /// project runs on the Godot <paramref name="godot"/> names or found, its editor on the scene at hand, in the user folders
     /// <paramref name="godotFolders"/> gives, headless where <paramref name="unseen"/> (the process's by default). Throws a <see cref="LaunchException"/> saying why not.</summary>
     public static async Task<LaunchPlan> ResolveAsync(RunConfiguration configuration, IReadOnlyList<ProjectModel> projects, WorkspaceModel? workspace, string stateFolder,
-        CancellationToken cancel = default, string? godot = null, string? atHand = null, IReadOnlyDictionary<string, string>? godotFolders = null, bool? unseen = null)
+        CancellationToken cancel = default, string? godot = null, string? atHand = null, IReadOnlyDictionary<string, string>? godotFolders = null, bool? unseen = null,
+        AppSettings? settings = null)
     {
         bool headless = unseen ?? PassengerApp.ShowsNoWindow;
         if (configuration.Unsupported is { } why)
         {
             throw new LaunchException($"{configuration.Name} cannot run here: {why}");
+        }
+        if (configuration.Cpp)
+        {
+            return CppPlan(configuration, workspace, settings, headless);
         }
         if (configuration.IsContainer)
         {
@@ -430,6 +444,37 @@ public sealed partial record LaunchPlan
         return new WebBuild(System.IO.Path.TrimEndingDirectorySeparator(sdk), PathNames.Canonical(System.IO.Path.Combine(project.Folder, folder)), globals)
         {
             Referenced = LaunchedFrameworks.Referenced(project, framework ?? project.TargetFrameworks.FirstOrDefault(), projects),
+        };
+    }
+
+    /// <summary>A CMake target's plan: the binary the toolchain builds, no MSBuild to ask and no dotnet build before it
+    /// starts (PrepareAsync builds it with cmake --build). GDB debugs it rather than the .NET debugger.</summary>
+    private static LaunchPlan CppPlan(RunConfiguration configuration, WorkspaceModel? workspace, AppSettings? settings, bool headless)
+    {
+        CppProject? project = workspace?.CppProjects.FirstOrDefault(p => PathNames.Same(p.Path, configuration.Project))
+            ?? (System.IO.Path.GetDirectoryName(configuration.Project) is { } folder
+                ? workspace?.CppProjects.FirstOrDefault(p => PathNames.Same(p.Folder, folder)) : null);
+        if (project is null)
+        {
+            throw new LaunchException($"{configuration.Name} cannot run: its CMake project is not loaded in the open folder");
+        }
+        CppToolchain toolchain = CppSettings.Toolchain(settings ?? new AppSettings());
+        string target = configuration.CppTarget.Length > 0 ? configuration.CppTarget : project.FirstExecutable ?? project.Name;
+        string binary = toolchain.BinaryOf(project.Folder, target);
+        Dictionary<string, string> variables = configuration.Environment.ToDictionary(v => v.Key, v => System.Environment.ExpandEnvironmentVariables(v.Value));
+        return new LaunchPlan
+        {
+            Name = configuration.Name,
+            Program = binary,
+            Arguments = [.. CommandLine.Split(System.Environment.ExpandEnvironmentVariables(configuration.Arguments))],
+            WorkingDirectory = PathNames.Canonical(project.Folder),
+            Environment = variables,
+            Project = project.Path,
+            Built = binary,
+            Console = configuration.Console,
+            Cpp = true,
+            Gdb = toolchain.GdbProgram,
+            Unseen = headless,
         };
     }
 

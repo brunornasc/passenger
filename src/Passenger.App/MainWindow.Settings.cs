@@ -138,6 +138,7 @@ public partial class MainWindow
         ApplyAnalysis();
         godotValues?.On = next.GodotLiveValues;
         session.Web?.UseNode(next.NodeInterpreter);
+        session.Web?.UseCppToolchain(next);
         session.Web?.UseTools();
         session.Web?.UseDockerHub(next.DockerHubTags);
         if (next.DownloadStylesheets != before.DownloadStylesheets)

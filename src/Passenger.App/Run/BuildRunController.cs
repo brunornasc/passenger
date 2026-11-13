@@ -4,6 +4,7 @@ using System.Text;
 using Avalonia.Threading;
 using Passenger.App.Aspire;
 using Passenger.App.Containers;
+using Passenger.App.Cpp;
 using Passenger.App.CSharp;
 using Passenger.App.Debugging;
 using Passenger.App.Docking;
@@ -16,6 +17,7 @@ using Passenger.Core;
 using Passenger.Inspector;
 using Passenger.Text;
 using Passenger.Workspace;
+using Passenger.Workspace.Cpp;
 
 namespace Passenger.App.Run;
 
@@ -761,7 +763,7 @@ public sealed partial class BuildRunController
         try
         {
             return (await LaunchPlan.ResolveAsync(arguments is null ? chosen : chosen with { Arguments = arguments }, session.Projects, session.Workspace, parts.StateFolder(), stop,
-                parts.Settings().GodotExecutable, parts.Editors.Active?.Path, session.GodotEnvironment, parts.Unseen), null);
+                parts.Settings().GodotExecutable, parts.Editors.Active?.Path, session.GodotEnvironment, parts.Unseen, parts.Settings()), null);
         }
         catch (OperationCanceledException) when (stop.IsCancellationRequested)
         {
@@ -827,6 +829,11 @@ public sealed partial class BuildRunController
         {
             return (null, problem, true);
         }
+        // A CMake target is built by cmake --build, not dotnet build; its plan carries no BuildStep.
+        if (plan.Cpp && build && await BuildCppAsync(plan, work) is { } cppFailed)
+        {
+            return (null, cppFailed, false);
+        }
         using CancellationTokenSource collecting = CancellationTokenSource.CreateLinkedTokenSource(work.Stopping);
         Task<LaunchPlan>? told = collects && Collects(chosen, plan) ? CollectAsync(plan, collecting.Token) : null;
         if (build && plan.Build is { } step && await BuildForAsync(step, work, reading) is { Succeeded: false } unbuilt)
@@ -856,6 +863,24 @@ public sealed partial class BuildRunController
             return (null, left, false);
         }
         return (plan, null, false);
+    }
+
+    /// <summary>Builds a CMake target's binary before Run or Debug, its output in the Build window as a .NET build's is.</summary>
+    private async Task<string?> BuildCppAsync(LaunchPlan plan, Working work)
+    {
+        CppProject? project = plan.Project is { } path ? session.Workspace?.CppProjects.FirstOrDefault(p => PathNames.Same(p.Path, path)) : null;
+        if (project is null)
+        {
+            return $"{plan.Name} cannot be built: its CMake project is not loaded in the open folder";
+        }
+        CppToolchain toolchain = CppSettings.Toolchain(parts.Settings());
+        string? target = project.Executables.FirstOrDefault(t => PathNames.Same(plan.Program, toolchain.BinaryOf(project.Folder, t.Name)))?.Name;
+        // BuildAsync configures afresh where the cache is missing or predates the recipe's Conan packages.
+        work.Say($"Building {plan.Name} with CMake…");
+        CppCommandResult result = await CppCommands.BuildAsync(project, toolchain, target, work.Stopping);
+        parts.Views.Build.Clear();
+        parts.Views.Build.Append(result.Output);
+        return result.Succeeded ? null : $"{plan.Name} could not be built: see the Build window";
     }
 
     /// <summary>Whether a start of a configuration collects its program's logs and traces: a project run's whose configuration
@@ -1135,8 +1160,8 @@ public sealed partial class BuildRunController
             parts.Views.Run.Clear();
             ShowInRun(null);
             UnfollowWatched();
-            // dotnet watch builds the project itself, and runs it again after an edit it cannot apply.
-            bool wanted = (hotReload ?? parts.Settings().HotReload) && chosen.NamesNoOtherProgram(session.Projects);
+            // dotnet watch builds .NET projects itself; a CMake target runs its binary as it is.
+            bool wanted = (hotReload ?? parts.Settings().HotReload) && !chosen.Cpp && chosen.NamesNoOtherProgram(session.Projects);
             bool godot = chosen.RunsGodot(session.Projects);
             // A game's errors, which Godot writes every frame they happen, folded in its console.
             parts.Views.Run.Fold = godot && !chosen.GodotEditor ? new Godot.GodotConsoleFold() : null;
@@ -2361,6 +2386,14 @@ public sealed partial class BuildRunController
         if (plan.WhyNot("debug") is { } why)
         {
             return why;
+        }
+        // A CMake target is debugged by GDB's own DAP interpreter, in a Debug tab of its own.
+        if (plan.Cpp)
+        {
+            work.Say($"Starting {chosen.Name} under gdb…");
+            parts.Dock.Show(ToolWindowIds.Debug);
+            parts.Views.Debug.ShowTab(console: true);
+            return await session.Debug.DebugCppAsync(plan, plan.Gdb);
         }
         if (launchHeld is { } hold)
         {

@@ -4,12 +4,15 @@ using Avalonia.Layout;
 using Avalonia.Media;
 using Avalonia.Platform.Storage;
 using Avalonia.Threading;
+using Passenger.App.Cpp;
 using Passenger.App.MSBuild;
 using Passenger.App.Run;
+using Passenger.App.Settings;
 using Passenger.App.ToolWindows;
 using Passenger.Core;
 using Passenger.Text;
 using Passenger.Workspace;
+using Passenger.Workspace.Cpp;
 
 namespace Passenger.App.Templates;
 
@@ -36,6 +39,10 @@ public sealed record CreatedProjects(string? Solution, IReadOnlyList<string> Pro
     /// <summary>Whether it is a Godot game (<see cref="OwnTemplates.GodotGame"/>): a GDScript one, no project of a solution,
     /// opened as its folder; either offered Passenger as Godot's script editor once open.</summary>
     public bool Game { get; init; }
+
+    /// <summary>Whether it is a C/C++ project (<see cref="OwnTemplates.CppConsole"/>): its folder opens as the workspace,
+    /// with no .NET project or solution to add.</summary>
+    public bool Cpp { get; init; }
 }
 
 /// <summary>How a new service runs, set up with it: as its own launch profiles say, in a container its Dockerfile or the
@@ -130,6 +137,9 @@ public sealed class NewProjectDialog : IdeWindow
     private CancellationTokenSource? creating;
     private CancellationTokenSource? installing;
 
+    /// <summary>The settings a C/C++ project's toolchain is read from.</summary>
+    private readonly AppSettings appSettings;
+
     /// <summary>The Godot a Godot game is made for, found off the window's thread as the dialog opens (<see cref="GodotLaunch.Found"/>).</summary>
     private readonly Task<GodotFound?> godotFound;
 
@@ -156,8 +166,10 @@ public sealed class NewProjectDialog : IdeWindow
     /// <param name="target">The solution a project is added to; null for New Solution.</param>
     /// <param name="containers">Why no container can be set up here, asked off the window's thread; null for no question.</param>
     /// <param name="godot">The Godot Settings names for a Godot game, its command line; null for the one found.</param>
-    public NewProjectDialog(string folder, ProjectTarget? target, Task<string?>? containers = null, string? godot = null)
+    /// <param name="settings">The settings a C/C++ project's toolchain is read from; the defaults where none is given.</param>
+    public NewProjectDialog(string folder, ProjectTarget? target, Task<string?>? containers = null, string? godot = null, AppSettings? settings = null)
     {
+        appSettings = settings ?? new AppSettings();
         followFolder = new Passenger.Editor.Debounce(TimeSpan.FromMilliseconds(400), FollowFolderAsync);
         godotFound = BackgroundWork.Run(() => GodotLaunch.Found(godot));
         runtimes = BackgroundWork.Run(() => DotnetMachine.Read().Installation?.Runtimes ?? []);
@@ -537,7 +549,8 @@ public sealed class NewProjectDialog : IdeWindow
                 Directory.CreateDirectory(plan.Root);
                 writes.Made(plan.Root);
             }
-            if (plan.Solution is not null && !template.IsSolution)
+            // A C/C++ project is its folder alone: no .NET solution, no dotnet new sln (and so no NuGet restore).
+            if (plan.Solution is not null && !template.IsSolution && !template.CppProject)
             {
                 progress.Text = $"Creating the solution {SolutionName}…";
                 if (!await MakeSolutionAsync(plan, writes, cancel.Token))
@@ -550,6 +563,16 @@ public sealed class NewProjectDialog : IdeWindow
                 if (await MakeGameAsync(plan, writes, cancel.Token) is { } game)
                 {
                     Created = game;
+                    creating = null;
+                    Close(Created);
+                }
+                return;
+            }
+            if (template.CppProject)
+            {
+                if (await MakeCppAsync(plan, writes, cancel.Token) is { } cpp)
+                {
+                    Created = cpp;
                     creating = null;
                     Close(Created);
                 }
@@ -697,6 +720,44 @@ public sealed class NewProjectDialog : IdeWindow
         };
     }
 
+    /// <summary>A C/C++ project written from the toolchain Settings names (<see cref="CppFiles"/>): its folder opens as the
+    /// workspace, with no .NET project or solution for the window to add.</summary>
+    private async Task<CreatedProjects?> MakeCppAsync(Plan plan, Writes writes, CancellationToken cancel)
+    {
+        CppToolchain toolchain = CppSettings.Toolchain(appSettings);
+        bool cxx = Language != "C";
+        string folder = plan.ProjectFolder;
+        string name = NameGiven;
+        progress.Text = $"Writing the C/C++ project {name}…";
+        IReadOnlyList<(string Path, string Text)> files = CppFiles.For(name, cxx, toolchain);
+        string? unwritten = await writes.During(() => BackgroundWork.Run(() =>
+        {
+            try
+            {
+                Directory.CreateDirectory(folder);
+                foreach ((string path, string text) in files)
+                {
+                    FileText.SaveNew(Path.Combine(folder, path), text);
+                }
+                return null;
+            }
+            catch (Exception error) when (error is IOException or UnauthorizedAccessException)
+            {
+                return error.Message;
+            }
+        }, cancel));
+        if (unwritten is not null)
+        {
+            await FailedAsync($"{name} could not be created: {unwritten}", writes);
+            return null;
+        }
+        return new CreatedProjects(null, [], PathNames.Canonical(folder), ProjectSetup.None) { Cpp = true };
+    }
+
+    /// <summary>Passenger's own C/C++ project beside dotnet new's templates, offered by New Solution but not by Add New
+    /// Project, since a CMake project joins no .NET solution.</summary>
+    private TemplateFamily? CppFamily() => target is null ? new TemplateFamily("C/C++ (CMake)", [OwnTemplates.CppConsole()]) : null;
+
     /// <summary>Why a Godot game cannot be made here (<see cref="GodotGames.WhyNot"/>); null while the Godot is still looked for, or it can.</summary>
     private string? GodotWhyNot() => template is not { GodotGame: true } || !godotFound.IsCompletedSuccessfully ? null
         : GodotGames.WhyNot(godotFound.Result, ScriptGame, GodotLaunch.NotFound);
@@ -719,7 +780,13 @@ public sealed class NewProjectDialog : IdeWindow
         await Task.WhenAll(godotFound, runtimes);
         if (catalog is not null && creating is null)
         {
-            families = [.. families.Where(f => !f.Types.Any(t => t.GodotGame)), GodotFamily(catalog)];
+            List<TemplateFamily> kept = [.. families.Where(f => !f.Types.Any(t => t.GodotGame || t.CppProject))];
+            if (CppFamily() is { } cpp)
+            {
+                kept.Add(cpp);
+            }
+            kept.Add(GodotFamily(catalog));
+            families = kept;
             Filter(searched: false);
         }
         if (template is { GodotGame: true })
@@ -842,7 +909,7 @@ public sealed class NewProjectDialog : IdeWindow
         string root = Path.Combine(folder, SolutionName);
         string solution = Path.Combine(root, $"{SolutionName}.{SolutionFormat}");
         return template is { IsSolution: true } ? new Plan(root, solution, root)
-            : ScriptGame ? new Plan(root, null, root)
+            : ScriptGame || template is { CppProject: true } ? new Plan(root, null, root)
             : new Plan(root, solution, SameDirectory ? root : Path.Combine(root, ProjectName));
     }
 
@@ -1163,7 +1230,13 @@ public sealed class NewProjectDialog : IdeWindow
             return;
         }
         catalog = read;
-        families = [.. read.Families.Select(f => target is null ? f : f.Projects()).OfType<TemplateFamily>(), GodotFamily(read)];
+        List<TemplateFamily> shown = [.. read.Families.Select(f => target is null ? f : f.Projects()).OfType<TemplateFamily>()];
+        if (CppFamily() is { } cpp)
+        {
+            shown.Add(cpp);
+        }
+        shown.Add(GodotFamily(read));
+        families = shown;
         setting = true;
         string? formatWas = format.SelectedItem as string;
         List<string> formats = [.. read.SolutionFormats.Select(f => $".{f}")];
@@ -1421,6 +1494,7 @@ public sealed class NewProjectDialog : IdeWindow
     /// <summary>The command line Create runs, as the dialog shows it.</summary>
     private void ShowCommand() =>
         command.Text = template is null ? string.Empty
+            : template.CppProject ? $"Passenger writes {Plural.Listed([.. CppFiles.For(NameGiven, Language != "C", CppSettings.Toolchain(appSettings)).Select(f => f.Path)])}"
             : template.GodotGame ? $"Passenger writes {Plural.Listed([.. GodotGames.Files(NameGiven, !ScriptGame, GodotVersion ?? "4").Select(f => f.Path)])}"
                 + (ScriptGame ? string.Empty : $", the project on Godot.NET.Sdk/{GodotVersion ?? "the Godot found's version"}")
             : $"dotnet new {string.Join(' ', Arguments(null).Select(ChildProcesses.Quote))}";

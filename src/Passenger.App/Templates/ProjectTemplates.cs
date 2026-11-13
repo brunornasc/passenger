@@ -58,6 +58,9 @@ public sealed record ProjectTemplate(string Name, IReadOnlyList<string> ShortNam
     /// <summary>Whether it is Passenger's own Godot 4 game, whose files the IDE writes itself (<see cref="OwnTemplates.GodotGame"/>).</summary>
     public bool GodotGame { get; init; }
 
+    /// <summary>Whether it is Passenger's own C/C++ project, whose CMake, Conan and clangd files the IDE writes itself.</summary>
+    public bool CppProject { get; init; }
+
     /// <summary>Whether it makes what it makes by the name given: false for one whose name has no default (.gitignore).</summary>
     public bool TakesName { get; init; } = true;
 

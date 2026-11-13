@@ -1,6 +1,7 @@
 using System.Text.Json.Nodes;
 using Passenger.App.State;
 using Passenger.Vcs;
+using Passenger.Workspace.Cpp;
 
 namespace Passenger.App.Settings;
 
@@ -233,6 +234,60 @@ public sealed record AppSettings : IStateDocument<AppSettings>
     /// <summary>The Chromium browser a Blazor app's WebAssembly half is debugged in, with arguments given every start of it,
     /// as one command line; null for the one found (<see cref="Passenger.Core.ChromiumBrowsers"/>).</summary>
     public string? DebugBrowser { get; init; }
+
+    /// <summary>Where a C/C++ project's compilers come from: the system's, a named cross toolchain or paths of their own.</summary>
+    public CppPreset CppPreset { get; init; } = CppPreset.System;
+
+    /// <summary>The C standard a CMake configure passes; Default leaves the project's own CMakeLists.txt to say it.</summary>
+    public CStandard CppC { get; init; } = CStandard.Default;
+
+    /// <summary>The C++ standard a CMake configure passes; Default leaves the project's own CMakeLists.txt to say it.</summary>
+    public CxxStandard CppCxx { get; init; } = CxxStandard.Default;
+
+    /// <summary>The CMake generator a C/C++ configure uses.</summary>
+    public CppGenerator CppGenerator { get; init; } = CppGenerator.Ninja;
+
+    /// <summary>The C compiler's path, or null for the preset's or CMake's own.</summary>
+    public string? CppCCompiler { get; init; }
+
+    /// <summary>The C++ compiler's path, or null for the preset's or CMake's own.</summary>
+    public string? CppCxxCompiler { get; init; }
+
+    /// <summary>clangd's executable, or null for the one on the PATH or in the user-local C/C++ tools folder.</summary>
+    public string? CppClangd { get; init; }
+
+    /// <summary>cmake's executable, or null for the one on the PATH.</summary>
+    public string? CppCMake { get; init; }
+
+    /// <summary>conan's executable, or null for the one on the PATH.</summary>
+    public string? CppConan { get; init; }
+
+    /// <summary>gdb's executable, or null for the one on the PATH; GDB 14 or later speaks DAP itself.</summary>
+    public string? CppGdb { get; init; }
+
+    /// <summary>The build folder, relative to the project's, holding compile_commands.json and the binaries.</summary>
+    public string CppBuildFolder { get; init; } = CppToolchain.DefaultBuildFolder;
+
+    /// <summary>The CMake build type a configure and a Conan install use.</summary>
+    public string CppConfiguration { get; init; } = "Debug";
+
+    /// <summary>A cross compiler's target triple (m68k-elf), which clangd and CMake are told.</summary>
+    public string? CppTargetTriple { get; init; }
+
+    /// <summary>A cross compiler's sysroot, which clangd and CMake are told.</summary>
+    public string? CppSysroot { get; init; }
+
+    /// <summary>A CMake toolchain file of the person's own, taking the place of Conan's where both are named.</summary>
+    public string? CppToolchainFile { get; init; }
+
+    /// <summary>The Conan profile a conan install uses, or null for the default one.</summary>
+    public string? CppConanProfile { get; init; }
+
+    /// <summary>Whether a project with a Conan recipe runs conan install before CMake configures it.</summary>
+    public bool CppUseConan { get; init; } = true;
+
+    /// <summary>More arguments a CMake configure is given, as one command line.</summary>
+    public string? CppExtraCMakeArguments { get; init; }
 
     /// <summary>The Godot a Godot project's game and editor run on, with arguments given every start of it, as one command
     /// line; null for the one found (<see cref="Passenger.Core.GodotExecutables"/>).</summary>
@@ -467,12 +522,27 @@ public sealed record AppSettings : IStateDocument<AppSettings>
             XamlFormat = (XamlFormat ?? defaults.XamlFormat).Clamped(),
             GDScriptFormat = (GDScriptFormat ?? defaults.GDScriptFormat).Clamped(),
             AgentFolders = [.. (AgentFolders ?? []).Where(f => !string.IsNullOrWhiteSpace(f)).Distinct(Passenger.Core.PathNames.Comparer)],
+            CppCCompiler = Trimmed(CppCCompiler),
+            CppCxxCompiler = Trimmed(CppCxxCompiler),
+            CppClangd = Trimmed(CppClangd),
+            CppCMake = Trimmed(CppCMake),
+            CppConan = Trimmed(CppConan),
+            CppGdb = Trimmed(CppGdb),
+            CppBuildFolder = string.IsNullOrWhiteSpace(CppBuildFolder) ? CppToolchain.DefaultBuildFolder : CppBuildFolder.Trim(),
+            CppConfiguration = string.IsNullOrWhiteSpace(CppConfiguration) ? "Debug" : CppConfiguration.Trim(),
+            CppTargetTriple = Trimmed(CppTargetTriple),
+            CppSysroot = Trimmed(CppSysroot),
+            CppToolchainFile = Trimmed(CppToolchainFile),
+            CppConanProfile = Trimmed(CppConanProfile),
+            CppExtraCMakeArguments = Trimmed(CppExtraCMakeArguments),
         };
         foreach (Setting setting in Declared.All)
         {
             clamped = setting.Clamp(clamped);
         }
         return clamped;
+
+        static string? Trimmed(string? value) => string.IsNullOrWhiteSpace(value) ? null : value.Trim();
 
         // A shortcut kept under an action's former id is the action's now (one kept under its id now winning).
         static Dictionary<string, string[]> Readable(Dictionary<string, string[]>? shortcuts) =>

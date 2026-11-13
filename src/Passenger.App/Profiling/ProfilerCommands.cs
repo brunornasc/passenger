@@ -263,7 +263,8 @@ public sealed class ProfilerCommands
     private string? WhyNotProfile(ProjectSession folder, RunConfiguration? configuration = null)
     {
         RunConfiguration? chosen = configuration ?? folder.Configurations.Chosen;
-        return Busy(folder) ?? (chosen is not null && folder.Aspire.IsAspire(chosen) ? null : GoesOn(folder) ?? RunConsoleTaken(folder, chosen));
+        return Busy(folder) ?? (chosen is { Cpp: true } ? "Passenger's profiler samples .NET programs; a C/C++ target needs its own profiler"
+            : chosen is not null && folder.Aspire.IsAspire(chosen) ? null : GoesOn(folder) ?? RunConsoleTaken(folder, chosen));
     }
 
     private async Task<string?> LaunchAsync(ProjectSession profiled, string? arguments, Working work, RunConfiguration? configuration)
@@ -272,6 +273,10 @@ public sealed class ProfilerCommands
         if ((configuration ?? profiled.Configurations.Chosen) is not { } chosen)
         {
             return profiled.NothingTo("profile");
+        }
+        if (chosen.Cpp)
+        {
+            return "Passenger's profiler samples .NET programs; a C/C++ target needs its own profiler";
         }
         if (chosen.IsContainer)
         {

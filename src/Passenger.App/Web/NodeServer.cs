@@ -128,6 +128,11 @@ internal sealed class NodeServer
                     Fail(unavailable.Message, unavailable.Label);
                     return null;
                 }
+                catch (Passenger.App.Cpp.ClangdServer.Unavailable unavailable)
+                {
+                    Fail(unavailable.Message, unavailable.Label);
+                    return null;
+                }
                 catch (Godot.GodotScripts.Unstarted)
                 {
                     // Nothing to start yet: its files are Passenger's own reading's until one is asked for, which starts it then.

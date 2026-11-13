@@ -45,6 +45,20 @@ public static class OwnTemplates
         return new ProjectTemplate("Godot 4 Game", ["godot"], "Passenger", ["Game", "Godot"], "Game", scripts ? [csharp, gdscript] : [csharp]) { GodotGame = true };
     }
 
+    /// <summary>A C or C++ project written by Passenger: CMakeLists.txt, a Conan recipe, presets, clangd's flags and a
+    /// first source file, on the toolchain Settings names.</summary>
+    public static ProjectTemplate CppConsole()
+    {
+        TemplateVariant cpp = new("CMake.Project.Cxx", "C++", 0,
+            "A C++ project on CMake and Conan: a CMakeLists.txt, conanfile.txt, CMakePresets.json, .clangd and main.cpp", null, [], null, []);
+        TemplateVariant c = new("CMake.Project.C", "C", 0,
+            "A C project on CMake and Conan: a CMakeLists.txt, conanfile.txt, CMakePresets.json, .clangd and main.c", null, [], null, []);
+        return new ProjectTemplate("CMake C/C++ Project", ["cmake"], "Passenger", ["Console", "C++", "C"], "CMakeProject", [cpp, c])
+        {
+            CppProject = true,
+        };
+    }
+
     private static ProjectTemplate Type(string kind)
     {
         string lower = kind.ToLowerInvariant();

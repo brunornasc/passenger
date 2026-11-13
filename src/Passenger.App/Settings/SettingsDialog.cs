@@ -5,6 +5,7 @@ using Avalonia.Layout;
 using Avalonia.Media;
 using Avalonia.Threading;
 using Passenger.Editor;
+using Passenger.Workspace.Cpp;
 
 namespace Passenger.App.Settings;
 
@@ -35,6 +36,7 @@ public sealed partial class SettingsDialog : IdeWindow
     public const string StylesheetsPage = "Remote Stylesheets";
     public const string DockerPage = "Docker";
     public const string GodotPage = "Godot";
+    public const string CppPage = "C/C++";
     public const string KeymapPage = "Keymap";
     public const string McpPage = "MCP Server";
     public const string DiscordPage = "Discord";
@@ -61,7 +63,7 @@ public sealed partial class SettingsDialog : IdeWindow
     public static readonly string[] DiscordChoices = ["Passenger only", "The solution", "The solution and the file"];
 
     private static readonly string[] Order = [Appearance, SystemPage, UpdatesPage, ExplorerPage, EditorPage, CodeFoldingPage, PostfixPage, XamlCodeStylePage, GDScriptCodeStylePage, LiveTemplatesPage,
-        VersionControlPage, BuildPage, RunPage, HotReloadPage, NodePage, EslintPage, PrettierPage, SchemasPage, StylesheetsPage, DockerPage, GodotPage, TerminalPage, McpPage, DiscordPage, DiagnosticsPage, KeymapPage];
+        VersionControlPage, BuildPage, RunPage, HotReloadPage, NodePage, EslintPage, PrettierPage, SchemasPage, StylesheetsPage, DockerPage, GodotPage, CppPage, TerminalPage, McpPage, DiscordPage, DiagnosticsPage, KeymapPage];
 
     /// <summary>The names of Attributes format's choices, in <see cref="Passenger.Xaml.Features.XamlAttributeStyle"/>'s
     /// order.</summary>
@@ -390,6 +392,7 @@ public sealed partial class SettingsDialog : IdeWindow
         Add(Declared.GodotTestsWindowed);
         Add(Declared.GodotDebugPlays);
         Add(Declared.GodotSelectionFollows);
+        AddCppPage();
 
         Add(Declared.TerminalFontSize);
         Add(Declared.TerminalFontFamily);
@@ -435,6 +438,47 @@ public sealed partial class SettingsDialog : IdeWindow
         Add(Declared.LogEveryProgram);
 
         AddKeymap();
+    }
+
+    /// <summary>The C/C++ page: the toolchain, the standards, the tools' paths and the cross compiler's target.</summary>
+    private void AddCppPage()
+    {
+        Add(Declared.CppPreset);
+        Add(Declared.CppC);
+        Add(Declared.CppCxx);
+        Add(Declared.CppGenerator);
+        Add(Declared.CppUseConan);
+        Add(Declared.CppClangd);
+        Add(Declared.CppCMake);
+        Add(Declared.CppConan);
+        Add(Declared.CppGdb);
+        Add(Declared.CppCCompiler);
+        Add(Declared.CppCxxCompiler);
+        Text(CppPage, "Build folder", Working.CppBuildFolder, CppToolchain.DefaultBuildFolder,
+            "cmake build folder compile_commands.json binaries output", v => Change(s => s with { CppBuildFolder = v ?? CppToolchain.DefaultBuildFolder }),
+            "Relative to the project; CMake writes compile_commands.json here, and clangd reads it from here.");
+        Text(CppPage, "Build type", Working.CppConfiguration, "Debug",
+            "cmake build type debug release relwithdebinfo conan configuration", v => Change(s => s with { CppConfiguration = v ?? "Debug" }));
+        Text(CppPage, "Target triple", Working.CppTargetTriple, "m68k-elf",
+            "cross compiler target triple m68k elf amiga atari clang gcc", v => Change(s => s with { CppTargetTriple = v }),
+            "A cross compiler's target, told to CMake as CMAKE_*_COMPILER_TARGET and to clangd as --target.");
+        Text(CppPage, "Sysroot", Working.CppSysroot, "A sysroot folder",
+            "cross compiler sysroot rootfs headers libraries", v => Change(s => s with { CppSysroot = v }));
+        Text(CppPage, "CMake toolchain file", Working.CppToolchainFile, "A .cmake file",
+            "cmake toolchain file cross compilation conan", v => Change(s => s with { CppToolchainFile = v }),
+            "One of your own takes the place of Conan's toolchain where both are named.");
+        Text(CppPage, "Conan profile", Working.CppConanProfile, "default",
+            "conan profile host build cross settings", v => Change(s => s with { CppConanProfile = v }));
+        Text(CppPage, "Extra CMake arguments", Working.CppExtraCMakeArguments, "-DFOO=bar",
+            "cmake configure arguments cache variables options", v => Change(s => s with { CppExtraCMakeArguments = v }));
+    }
+
+    /// <summary>A text setting's row, empty for the default its placeholder names.</summary>
+    private void Text(string page, string label, string? value, string placeholder, string words, Action<string?> change, string? note = null)
+    {
+        TextBox box = new() { Classes = { StyleClasses.Search }, Text = value ?? string.Empty, PlaceholderText = placeholder, Width = 320 };
+        box.TextChanged += (_, _) => change(string.IsNullOrWhiteSpace(box.Text) ? null : box.Text.Trim());
+        Add(page, label, box, words, note);
     }
 
     /// <summary>A declared setting's own row, on its page, its editor made from the declaration.</summary>

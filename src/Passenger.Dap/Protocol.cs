@@ -75,6 +75,17 @@ public sealed record LaunchArguments
     public bool? Unseen { get; init; }
 }
 
+/// <summary>GDB's own launch request: its DAP interpreter (-i=dap) starts the program at launch, so configurationDone
+/// only resumes a stop at main and answers "notStopped" otherwise.</summary>
+public sealed record GdbLaunchArguments
+{
+    public string Program { get; init; } = string.Empty;
+    public IReadOnlyList<string> Args { get; init; } = [];
+    public string Cwd { get; init; } = string.Empty;
+    public IReadOnlyDictionary<string, string> Env { get; init; } = new Dictionary<string, string>();
+    public bool StopAtBeginningOfMain { get; init; }
+}
+
 public sealed record AttachArguments
 {
     public int? ProcessId { get; init; }
