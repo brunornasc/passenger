@@ -17,6 +17,7 @@ public static class ToolWindowIds
     public const string Find = "find";
     public const string Git = "git";
     public const string NuGet = "nuget";
+    public const string Conan = "conan";
     public const string Terminal = "terminal";
     public const string LocalHistory = "localHistory";
     public const string Containers = "containers";

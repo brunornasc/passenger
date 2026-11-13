@@ -82,6 +82,7 @@ public static class AppActions
     // The running version's release notes: no key of Rider's.
     public const string WhatsNew = "app.whatsNew";
     public const string ShowNuGet = "app.showNuGet";
+    public const string ShowConan = "app.showConan";
     public const string Profile = "app.profile";
     public const string ShowProfiler = "app.showProfiler";
 
@@ -513,6 +514,7 @@ public static class AppActions
     public const string CommitRefresh = "app.vcs.refreshChanges";
     public const string NuGetRefresh = "app.nuget.refresh";
     public const string NuGetUpdateAll = "app.nuget.updateAll";
+    public const string ConanRefresh = "app.conan.refresh";
     public const string LiveTreeRefresh = "app.liveTree.refresh";
 
     // The breakpoints' windows, the window's to show.

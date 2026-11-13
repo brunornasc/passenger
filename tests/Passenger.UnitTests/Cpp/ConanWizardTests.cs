@@ -20,6 +20,12 @@ public sealed class ConanWizardTests
         Install finished successfully
         """;
 
+    private const string RecipePage = """
+        <html><head><title>fmt</title></head><body>
+        <script id="__NEXT_DATA__" type="application/json">{"props":{"pageProps":{"recipeName":"fmt","packageInfo":{"0":{"name":"fmt","info":{"version":"12.2.0","description":"A safe and fast alternative to printf and IOStreams.","homepage":"https://github.com/fmtlib/fmt","licenses":["MIT"],"labels":["format","iostream"]}},"1":{"name":"fmt","info":{"version":"11.2.0","description":"Older words.","licenses":["MIT"]}}}}}}</script>
+        </body></html>
+        """;
+
     [Fact]
     public void The_remote_answer_groups_versions_under_their_recipe_names()
     {
@@ -31,6 +37,45 @@ public sealed class ConanWizardTests
         Assert.Equal("fmt/11.0.2", ConanCenter.Requires("fmt", "11.0.2"));
         Assert.True(ConanCenter.Valid("fmt/11.0.2"));
         Assert.False(ConanCenter.Valid("fmt"));
+    }
+
+    [Fact]
+    public void A_recipes_page_gives_the_newest_versions_words_home_licences_and_labels()
+    {
+        ConanDetails details = Assert.IsType<ConanDetails>(ConanCenter.Details(RecipePage));
+        Assert.Equal("A safe and fast alternative to printf and IOStreams.", details.Description);
+        Assert.Equal("https://github.com/fmtlib/fmt", details.Homepage);
+        Assert.Equal(new[] { "MIT" }, details.Licenses);
+        Assert.Equal(new[] { "format", "iostream" }, details.Labels);
+        Assert.Equal("https://conan.io/center/recipes/fmt", ConanCenter.DetailsUrl("fmt"));
+        Assert.Null(ConanCenter.Details("<html>no page data</html>"));
+    }
+
+    [Fact]
+    public void A_reference_splits_into_its_recipe_and_version()
+    {
+        Assert.Equal(("fmt", "12.2.0"), ConanCenter.Split("fmt/12.2.0"));
+        Assert.Equal(("zlib", "1.3.1"), ConanCenter.Split(" zlib/1.3.1 "));
+        Assert.Null(ConanCenter.Split("fmt"));
+    }
+
+    [Fact]
+    public void Removing_a_recipe_takes_its_find_package_and_linked_targets_out()
+    {
+        const string lists = """
+            cmake_minimum_required(VERSION 3.25)
+            project(App LANGUAGES CXX)
+            find_package(fmt REQUIRED)
+            find_package(ZLIB REQUIRED)
+            add_executable(app main.cpp)
+            target_link_libraries(app PRIVATE fmt::fmt ZLIB::ZLIB)
+            """;
+        string without = CppFiles.WithoutPackages(lists, "fmt");
+        Assert.DoesNotContain("find_package(fmt", without);
+        Assert.Contains("find_package(ZLIB REQUIRED)", without);
+        Assert.Contains("target_link_libraries(app PRIVATE ZLIB::ZLIB)", without);
+        string alone = CppFiles.WithoutPackages("add_executable(app main.cpp)\ntarget_link_libraries(app PRIVATE fmt::fmt)\n", "fmt");
+        Assert.DoesNotContain("target_link_libraries", alone);
     }
 
     [Fact]

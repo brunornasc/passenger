@@ -7,6 +7,12 @@ namespace Passenger.Workspace.Cpp;
 /// <summary>A recipe on Conan Center and the versions of it that are published.</summary>
 public sealed record ConanPackage(string Name, IReadOnlyList<string> Versions);
 
+/// <summary>What conan.io/center says of a recipe: the words under its name, its home, its licences and its labels.</summary>
+public sealed record ConanDetails(string? Description, string? Homepage, IReadOnlyList<string> Licenses, IReadOnlyList<string> Labels)
+{
+    public bool IsEmpty => Description is null && Homepage is null && Licenses.Count == 0 && Labels.Count == 0;
+}
+
 /// <summary>The Conan Center remote's recipe list, and the CMake words a conan install prints for CMakeDeps. All of it
 /// read without starting a process, so the wizard's list and its CMake edits can be tested.</summary>
 public static partial class ConanCenter
@@ -19,6 +25,54 @@ public static partial class ConanCenter
 
     /// <summary>Where a person browses the packages the wizard lists.</summary>
     public const string Browse = "https://conan.io/center";
+
+    /// <summary>The page conan.io/center gives a recipe, whose own words say what it is.</summary>
+    public static string DetailsUrl(string name) => $"{Browse}/recipes/{Uri.EscapeDataString(name)}";
+
+    /// <summary>A recipe's words as conan.io/center embeds them in its page: the newest version's description, home,
+    /// licences and labels, read without a browser and so testable.</summary>
+    public static ConanDetails? Details(string html)
+    {
+        if (NextData().Match(html) is not { Success: true } script)
+        {
+            return null;
+        }
+        try
+        {
+            using JsonDocument read = JsonDocument.Parse(script.Groups[1].Value);
+            JsonElement? page = JsonMembers.Object(JsonMembers.Object(read.RootElement, "props"), "pageProps");
+            if (FirstRecipe(page) is not { } recipe)
+            {
+                return null;
+            }
+            return new ConanDetails(
+                JsonMembers.Text(recipe, "description"),
+                JsonMembers.Text(recipe, "homepage"),
+                JsonMembers.Texts(recipe, "licenses"),
+                JsonMembers.Texts(recipe, "labels"));
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
+    }
+
+    /// <summary>The newest version's info in a page's packageInfo, whether it is keyed "0", "1"… or listed.</summary>
+    private static JsonElement? FirstRecipe(JsonElement? pageProps)
+    {
+        if (JsonMembers.Value(pageProps, "packageInfo") is not { } packages)
+        {
+            return null;
+        }
+        IEnumerable<JsonElement> entries = packages.ValueKind == JsonValueKind.Array
+            ? packages.EnumerateArray()
+            : packages.EnumerateObject().Select(p => p.Value);
+        return entries.Select(p => JsonMembers.Object(p, "info")).FirstOrDefault(i => i is not null);
+    }
+
+    /// <summary>A reference's recipe and version, as conanfile.txt writes them.</summary>
+    public static (string Name, string Version)? Split(string reference) =>
+        Ref().Match(reference.Trim()) is { Success: true } found ? (found.Groups[1].Value, found.Groups[2].Value) : null;
 
     /// <summary>The refs a /v2/conans/search answer gives, grouped by recipe name with its newest versions first.</summary>
     public static IReadOnlyList<ConanPackage> Recipes(string json)
@@ -135,6 +189,9 @@ public static partial class ConanCenter
 
     [GeneratedRegex(@"^\s*([A-Za-z0-9_.+-]+)/([A-Za-z0-9_.+-]+)(?:@[^/\s]+/[^/\s]+)?\s*$")]
     private static partial Regex Ref();
+
+    [GeneratedRegex("""<script[^>]*id="__NEXT_DATA__"[^>]*>(.*?)</script>""", RegexOptions.Singleline)]
+    private static partial Regex NextData();
 
     [GeneratedRegex(@"^find_package\(\s*([A-Za-z0-9_.+-]+)", RegexOptions.IgnoreCase)]
     private static partial Regex Find();

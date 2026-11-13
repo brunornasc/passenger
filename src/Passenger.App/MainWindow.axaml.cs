@@ -96,6 +96,7 @@ public partial class MainWindow : IdeWindow
         AddGodotExport();
         AddDotnet();
         AddCpp();
+        AddConan();
         AddRoutes();
         AddRequestMarks();
         AddRequests();

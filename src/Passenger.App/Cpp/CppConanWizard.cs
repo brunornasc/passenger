@@ -23,6 +23,7 @@ public sealed class CppConanWizard : IdeWindow
     private readonly TextBox search = new() { Classes = { StyleClasses.Search }, PlaceholderText = "Filter Conan Center recipes…", Width = 320 };
     private readonly ListBox names = new() { Classes = { StyleClasses.Tree }, Height = 230 };
     private readonly ComboBox versions = new() { Classes = { StyleClasses.Form }, Width = 170 };
+    private readonly TextBlock description = new() { TextWrapping = TextWrapping.Wrap, IsVisible = false, Classes = { StyleClasses.Muted } };
     private readonly ListBox chosen = new() { Classes = { StyleClasses.Tree }, Height = 100 };
     private readonly TextBox manual = new() { Classes = { StyleClasses.Search }, PlaceholderText = "Or a reference, e.g. fmt/11.0.2", Width = 320 };
     private readonly Button add = new() { Content = "Add" };
@@ -31,7 +32,9 @@ public sealed class CppConanWizard : IdeWindow
     private readonly Button ok = DialogFooter.Default("OK");
     private readonly TextBlock output = new() { TextWrapping = TextWrapping.Wrap, Classes = { StyleClasses.Muted } };
     private readonly List<string> selected = [];
+    private readonly Dictionary<string, ConanDetails?> details = new(StringComparer.OrdinalIgnoreCase);
     private IReadOnlyList<ConanPackage> packages = [];
+    private CancellationTokenSource? reading;
     private bool installing;
     private bool done;
 
@@ -70,6 +73,7 @@ public sealed class CppConanWizard : IdeWindow
         body.Children.Add(names);
         StackPanel versionRow = new() { Orientation = Orientation.Horizontal, Spacing = 10, Children = { versions, add } };
         body.Children.Add(versionRow);
+        body.Children.Add(description);
         body.Children.Add(new TextBlock { Text = "Chosen packages", FontWeight = FontWeight.SemiBold });
         body.Children.Add(chosen);
         body.Children.Add(new StackPanel { Orientation = Orientation.Horizontal, Spacing = 10, Children = { manual, remove } });
@@ -111,33 +115,11 @@ public sealed class CppConanWizard : IdeWindow
     {
         try
         {
-            return await BackgroundWork.Run(ReadAsync);
+            return await BackgroundWork.Run(() => ConanPackages.ReadRecipesAsync(CancellationToken.None));
         }
         catch (Exception failed) when (failed is HttpRequestException or TaskCanceledException or JsonException or IOException)
         {
             return [];
-        }
-
-        static async Task<IReadOnlyList<ConanPackage>> ReadAsync()
-        {
-            using HttpClient client = new() { Timeout = TimeSpan.FromSeconds(30) };
-            foreach (string url in (string[])[ConanCenter.RecipesUrl, ConanCenter.FallbackUrl])
-            {
-                try
-                {
-                    if (ConanCenter.Recipes(await client.GetStringAsync(url)) is { Count: > 0 } found)
-                    {
-                        return found;
-                    }
-                }
-                catch (Exception failed) when (failed is HttpRequestException or TaskCanceledException or JsonException)
-                {
-                    // The other remote, or the conan CLI, may still answer.
-                }
-            }
-            ChildResult listed = await ChildProcesses.RunAsync(ChildProcesses.Command("conan", ["list", "*", "-r=conancenter"]),
-                limit: TimeSpan.FromSeconds(60));
-            return listed.Succeeded ? ConanCenter.Listed(listed.Output) : [];
         }
     }
 
@@ -154,17 +136,75 @@ public sealed class CppConanWizard : IdeWindow
         ShowVersions();
     }
 
+    /// <summary>The chosen recipe's versions, and the words conan.io/center gives it: the page is read once per recipe and
+    /// kept, and only the newest choice's answer is shown.</summary>
     private void ShowVersions()
     {
-        if (names.SelectedItem is string name && packages.FirstOrDefault(p => p.Name == name) is { } package)
-        {
-            versions.ItemsSource = package.Versions.ToArray();
-            versions.SelectedIndex = 0;
-        }
-        else
+        reading?.Cancel();
+        description.Text = string.Empty;
+        description.IsVisible = false;
+        if (names.SelectedItem is not string name || packages.FirstOrDefault(p => p.Name == name) is not { } package)
         {
             versions.ItemsSource = null;
+            return;
         }
+        versions.ItemsSource = package.Versions.ToArray();
+        versions.SelectedIndex = 0;
+        if (details.TryGetValue(name, out ConanDetails? known))
+        {
+            ShowDetails(known);
+            return;
+        }
+        CancellationTokenSource cancel = reading = new();
+        IdeErrors.Observe(ReadDetailsAsync(name, cancel));
+    }
+
+    private async Task ReadDetailsAsync(string name, CancellationTokenSource cancel)
+    {
+        ConanDetails? found = await ConanPackages.ReadDetailsAsync(name, cancel.Token);
+        if (cancel.IsCancellationRequested)
+        {
+            return;
+        }
+        if (found is not null)
+        {
+            details[name] = found;
+        }
+        if (names.SelectedItem is string still && still.Equals(name, StringComparison.OrdinalIgnoreCase))
+        {
+            ShowDetails(found);
+        }
+    }
+
+    /// <summary>The recipe's description, home, licences and labels under its versions, or nothing where its page says
+    /// none of them.</summary>
+    private void ShowDetails(ConanDetails? found)
+    {
+        List<string> lines = [];
+        if (found is null || found.IsEmpty)
+        {
+            description.Text = string.Empty;
+            description.IsVisible = false;
+            return;
+        }
+        if (found.Description is { Length: > 0 } text)
+        {
+            lines.Add(text);
+        }
+        if (found.Homepage is { Length: > 0 } home)
+        {
+            lines.Add(home);
+        }
+        if (found.Licenses.Count > 0)
+        {
+            lines.Add("License: " + string.Join(", ", found.Licenses));
+        }
+        if (found.Labels.Count > 0)
+        {
+            lines.Add("Labels: " + string.Join(", ", found.Labels));
+        }
+        description.Text = string.Join("\n", lines);
+        description.IsVisible = lines.Count > 0;
     }
 
     private void Add()

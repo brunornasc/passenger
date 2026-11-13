@@ -134,6 +134,25 @@ public sealed class CppTests : IDisposable
         }
     }
 
+    /// <summary>The Conan window sits beside NuGet's on the left stripe, over the folder's C/C++ projects.</summary>
+    [AvaloniaFact]
+    public void The_conan_tool_window_sits_beside_nugets()
+    {
+        MainWindow window = new() { Width = 1200, Height = 800, StateFolder = state };
+        window.Show();
+        try
+        {
+            Passenger.App.Docking.ToolWindow conan = window.DockHost[ToolWindowIds.Conan];
+            Assert.Equal("Conan", conan.Title);
+            Assert.Equal(Passenger.App.Docking.ToolAnchor.BottomLeft, conan.Anchor);
+            Assert.Same(window.Conan, window.Conan);
+        }
+        finally
+        {
+            window.Close();
+        }
+    }
+
     /// <summary>The Conan Center wizard builds; its recipe list is fetched when the window opens.</summary>
     [AvaloniaFact]
     public void The_conan_package_wizard_builds()

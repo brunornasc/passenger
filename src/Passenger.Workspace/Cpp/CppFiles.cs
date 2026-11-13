@@ -187,6 +187,42 @@ public static partial class CppFiles
         return string.Join('\n', lines);
     }
 
+    /// <summary>A CMakeLists.txt without the find_package() and linked targets of one recipe, as Remove takes it out of
+    /// the recipe. Only the lines the Conan wizard writes are touched, and only for that recipe's own names.</summary>
+    public static string WithoutPackages(string text, string name)
+    {
+        Regex find = new($@"^\s*find_package\(\s*{Regex.Escape(name)}\b", RegexOptions.IgnoreCase);
+        string prefix = name + "::";
+        List<string> kept = [];
+        foreach (string line in text.Split('\n'))
+        {
+            if (find.IsMatch(line))
+            {
+                continue;
+            }
+            if (line.TrimStart().StartsWith("target_link_libraries(", StringComparison.OrdinalIgnoreCase))
+            {
+                string start = line[..(line.IndexOf('(') + 1)];
+                string inside = line[(line.IndexOf('(') + 1)..];
+                int close = inside.LastIndexOf(')');
+                string rest = close < 0 ? string.Empty : inside[(close + 1)..];
+                List<string> tokens = [.. (close < 0 ? inside : inside[..close]).Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries)];
+                List<string> links = [.. tokens.Skip(1).Where(t => !t.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))];
+                if (links.Count == 0 || links.All(Keyword))
+                {
+                    continue;
+                }
+                kept.Add(start + string.Join(' ', new[] { tokens[0] }.Concat(links)) + ")" + rest);
+                continue;
+            }
+            kept.Add(line);
+        }
+        return string.Join('\n', kept);
+
+        static bool Keyword(string token) => token is "PRIVATE" or "PUBLIC" or "INTERFACE" or "LINK_PRIVATE" or "LINK_PUBLIC"
+            or "LINK_INTERFACE_LIBRARIES" or "debug" or "optimized" or "general";
+    }
+
     [GeneratedRegex(@"\badd_executable\s*\(\s*([A-Za-z_][\w.+-]*)", RegexOptions.IgnoreCase)]
     private static partial Regex Executable();
 }

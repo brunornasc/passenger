@@ -299,6 +299,7 @@ public partial class MainWindow
         BindEndpoints(next);
         BindMigrations(next);
         BindPackages(next);
+        BindConan(next);
         BindContainers(next);
         // The Explorer's filter shows the files the index has, so it follows them as they are walked, come and go.
         next.Index.Walked += (_, _) =>
